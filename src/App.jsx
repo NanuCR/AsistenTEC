@@ -12,6 +12,7 @@ import { Dashboard }    from './components/dashboard/Dashboard';
 import { CourseManager } from './components/courses/CourseManager';
 import { TaskManager }  from './components/tasks/TaskManager';
 import { FileManager }  from './components/files/FileManager';
+import { FileExplorer } from './components/files/FileExplorer';
 import { NotesManager } from './components/notes/NotesManager';
 import { CommHub }      from './components/comm/CommHub';
 import { GradesManager } from './components/grades/GradesManager';
@@ -82,7 +83,7 @@ function Inner({ session }) {
         />;
 
       case 'archivos':
-        return <FileManager
+        return <FileExplorer
           userId={session.user.id}
           courses={courses} materials={materials} loading={mLoading}
           config={config}
@@ -111,7 +112,7 @@ function Inner({ session }) {
 
       case 'asistentec':
         return <AsistenteChat
-          courses={courses} tasks={tasks} grades={grades}
+          courses={courses} tasks={tasks} grades={grades} materials={materials}
           config={config}
           messages={chatMessages} onMessages={setChatMessages}
         />;
@@ -126,6 +127,11 @@ function Inner({ session }) {
         return null;
     }
   };
+
+  // Sync dark class on <html> for HeroUI / Tailwind dark mode
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark);
+  }, [dark]);
 
   return (
     <div style={{

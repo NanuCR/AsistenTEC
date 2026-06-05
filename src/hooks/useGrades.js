@@ -22,18 +22,22 @@ export function useGrades(userId, courseFilter) {
   useEffect(() => { load(); }, [load]);
 
   const add = async (fields) => {
-    // Front-end guard: score must be 0–max_score, max_score 0–100
-    const score    = parseFloat(fields.score);
-    const maxScore = parseFloat(fields.max_score ?? 100);
-    if (isNaN(score) || score < 0 || score > maxScore) {
-      return { error: { message: 'La nota debe estar entre 0 y el puntaje máximo.' } };
-    }
-    if (isNaN(maxScore) || maxScore <= 0 || maxScore > 100) {
-      return { error: { message: 'El puntaje máximo debe ser entre 0.01 y 100.' } };
-    }
+    const score     = parseFloat(fields.score);
+    const maxPoints = parseFloat(fields.max_points ?? 100);
+    const weight    = parseFloat(fields.weight ?? 100);
+
+    if (isNaN(score) || score < 0)
+      return { error: { message: 'La nota no puede ser negativa.' } };
+    if (score > maxPoints)
+      return { error: { message: `La nota (${score}) supera el máximo (${maxPoints} pts).` } };
+    if (isNaN(maxPoints) || maxPoints <= 0)
+      return { error: { message: 'El puntaje máximo debe ser mayor a 0.' } };
+    if (isNaN(weight) || weight <= 0 || weight > 100)
+      return { error: { message: 'El peso debe ser entre 0.01% y 100%.' } };
+
     const { data, error } = await supabase
       .from('grades')
-      .insert({ ...fields, score, max_score: maxScore, user_id: userId })
+      .insert({ ...fields, score, max_points: maxPoints, weight, user_id: userId })
       .select()
       .single();
     if (!error && data) setGrades(p => [...p, data]);
@@ -46,13 +50,20 @@ export function useGrades(userId, courseFilter) {
     return { error };
   };
 
-  /** Weighted average as a percentage for a given course. */
+  /**
+   * Weighted final grade for a course.
+   * Formula: Σ (score / max_points * weight) — capped at the weight each item contributes.
+   * Returns { earned, totalWeight, percentage } or null if no grades.
+   */
   const courseAvg = (courseId) => {
     const gs = grades.filter(g => g.course_id === courseId);
     if (!gs.length) return null;
-    const totalWeight  = gs.reduce((a, g) => a + parseFloat(g.max_score), 0);
-    const weightedSum  = gs.reduce((a, g) => a + (parseFloat(g.score) / parseFloat(g.max_score)) * parseFloat(g.max_score), 0);
-    return totalWeight > 0 ? (weightedSum / totalWeight) * 100 : null;
+    const totalWeight = gs.reduce((a, g) => a + parseFloat(g.weight), 0);
+    const earned      = gs.reduce((a, g) => {
+      const pct = parseFloat(g.score) / parseFloat(g.max_points ?? 100);
+      return a + pct * parseFloat(g.weight);
+    }, 0);
+    return { earned, totalWeight, percentage: totalWeight > 0 ? (earned / totalWeight) * 100 : null };
   };
 
   return { grades, loading, reload: load, add, remove, courseAvg };

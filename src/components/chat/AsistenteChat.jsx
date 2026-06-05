@@ -1,31 +1,30 @@
 import { useState, useRef, useEffect } from 'react';
+import { Card, CardBody, Input, Button, Chip, ScrollShadow } from '@nextui-org/react';
 import { useApp } from '../../context/AppContext';
-import { getTheme, makeStyles } from '../../styles/theme';
 import { callOllama, buildSystemPrompt } from '../../lib/ollama';
-import { daysLeft } from '../../lib/utils';
 import { Spinner } from '../ui/Spinner';
 
 const SUGGESTIONS = [
   '¿Qué tareas tengo esta semana?',
   'Analiza mi situación académica',
+  '¿De qué tratan mis materiales subidos?',
   '¿Qué curso necesita más atención?',
   'Dame consejos para estudiar mejor',
   'Planifica mi semana',
 ];
 
-export function AsistenteChat({ courses, tasks, grades, config, messages, onMessages }) {
+export function AsistenteChat({ courses, tasks, grades, materials, config, messages, onMessages }) {
   const { dark, courseFilter, notify } = useApp();
-  const T  = getTheme(dark);
-  const st = makeStyles(T);
 
-  const [input,  setInput]  = useState('');
-  const [loading, setLoad]  = useState(false);
+  const [input,   setInput]  = useState('');
+  const [loading, setLoad]   = useState(false);
   const endRef = useRef();
 
   const aName = config?.assistant_name || 'AsistenTEC';
 
-  const scrollToBottom = () => endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  useEffect(scrollToBottom, [messages, loading]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
   const today   = new Date(new Date().toDateString());
   const in3     = new Date(); in3.setDate(today.getDate() + 3);
@@ -41,14 +40,17 @@ export function AsistenteChat({ courses, tasks, grades, config, messages, onMess
     setInput('');
     setLoad(true);
 
-    const userMsg  = { role: 'user', content };
-    const history  = [...messages, userMsg];
+    const userMsg = { role: 'user', content };
+    const history = [...messages, userMsg];
     onMessages(history);
 
     const sys = buildSystemPrompt({
-      courses, pendingCount: pending.length,
-      overdueCount: overdue.length, urgentCount: urgent.length,
-      assistantName: aName, activeCourse,
+      courses, tasks, materials, grades,
+      pendingCount:  pending.length,
+      overdueCount:  overdue.length,
+      urgentCount:   urgent.length,
+      assistantName: aName,
+      activeCourse,
     });
 
     try {
@@ -59,99 +61,112 @@ export function AsistenteChat({ courses, tasks, grades, config, messages, onMess
       onMessages([...history, { role: 'assistant', content: reply }]);
     } catch (e) {
       onMessages([...history, { role: 'assistant', content: `⚠ Error: ${e.message}` }]);
-      notify('Error de Ollama: ' + e.message, 'error');
+      notify('Error de Ollama: ' + e.message, 'danger');
     }
     setLoad(false);
   };
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {/* Chat window */}
-      <div style={{
-        ...st.card({ padding: 14, height: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }),
-      }}>
-        {messages.length === 0 && (
-          <div style={{ margin: 'auto', textAlign: 'center', padding: 16 }}>
-            <div style={{ fontSize: 40, marginBottom: 8 }}>🤖</div>
-            <div style={{ fontFamily: T.mono, fontSize: 16, fontWeight: 800, color: T.txt, marginBottom: 4 }}>{aName}</div>
-            <div style={{ fontSize: 12, color: T.txt3, marginBottom: 20 }}>Tu asistente académico · Ollama</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
-              {SUGGESTIONS.map(q => (
-                <button key={q} style={{ ...st.primaryBtn(T.sur2, T.txt), fontSize: 11 }} onClick={() => send(q)}>
-                  {q}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+  // Count materials with analysis (AI can read these)
+  const readableMats = materials.filter(m => m.analysis && !m.analyzing);
 
-        {messages.map((m, i) => (
-          <div key={i} style={{
-            display: 'flex',
-            justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
-            gap: 8, alignItems: 'flex-end',
-          }}>
-            {m.role === 'assistant' && (
-              <div style={{
-                width: 28, height: 28, borderRadius: '50%',
-                background: T.accBg, display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: 11, fontFamily: T.mono,
-                color: T.acc, flexShrink: 0, fontWeight: 800,
-              }}>
-                AT
+  return (
+    <div className="flex flex-col gap-3 h-[calc(100vh-160px)] min-h-[500px]">
+      {/* Context badge */}
+      {readableMats.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Chip size="sm" color="success" variant="flat" startContent={<span>🧠</span>}>
+            La IA puede leer {readableMats.length} archivo{readableMats.length !== 1 ? 's' : ''} subido{readableMats.length !== 1 ? 's' : ''}
+          </Chip>
+          {activeCourse && (
+            <Chip size="sm" color="primary" variant="flat">
+              Filtro: {activeCourse.name}
+            </Chip>
+          )}
+        </div>
+      )}
+
+      {/* Chat window */}
+      <Card className={`flex-1 overflow-hidden ${dark ? 'bg-zinc-900 border border-zinc-800' : 'bg-white border border-zinc-200'}`} shadow="sm">
+        <CardBody className="p-4 h-full overflow-hidden flex flex-col gap-0">
+          <ScrollShadow className="flex-1 overflow-y-auto pr-1">
+            {messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                <div className="text-5xl mb-3">🤖</div>
+                <p className={`font-bold text-base font-mono mb-1 ${dark ? 'text-white' : 'text-zinc-900'}`}>{aName}</p>
+                <p className={`text-xs mb-6 ${dark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  IA local · Ollama · {config?.ollama_model ?? 'llama3'}
+                </p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {SUGGESTIONS.map(q => (
+                    <Button key={q} size="sm" variant="flat" onPress={() => send(q)} className={`text-xs ${dark ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
+                      {q}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 pb-2">
+                {messages.map((m, i) => (
+                  <div key={i} className={`flex gap-2 items-end ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    {m.role === 'assistant' && (
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono flex-shrink-0 ${dark ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
+                        AT
+                      </div>
+                    )}
+                    <div className={`max-w-[78%] px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
+                      m.role === 'user'
+                        ? 'bg-blue-500 text-white rounded-[18px_18px_4px_18px]'
+                        : dark
+                          ? 'bg-zinc-800 text-zinc-100 rounded-[18px_18px_18px_4px]'
+                          : 'bg-zinc-100 text-zinc-900 rounded-[18px_18px_18px_4px]'
+                    }`}>
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
+
+                {loading && (
+                  <div className="flex gap-2 items-end">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono flex-shrink-0 ${dark ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
+                      AT
+                    </div>
+                    <div className={`px-3.5 py-2.5 rounded-[18px_18px_18px_4px] flex items-center gap-2 ${dark ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
+                      <Spinner size={14} />
+                      <span className={`text-xs ${dark ? 'text-zinc-400' : 'text-zinc-500'}`}>Pensando…</span>
+                    </div>
+                  </div>
+                )}
+                <div ref={endRef} />
               </div>
             )}
-            <div style={{
-              maxWidth: '78%',
-              background: m.role === 'user' ? T.acc : T.sur2,
-              borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-              padding: '9px 14px', fontSize: 13, lineHeight: 1.65,
-              color: m.role === 'user' ? '#fff' : T.txt,
-              whiteSpace: 'pre-wrap',
-            }}>
-              {m.content}
-            </div>
-          </div>
-        ))}
-
-        {loading && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: T.accBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: T.mono, color: T.acc, fontWeight: 800 }}>AT</div>
-            <div style={{ background: T.sur2, borderRadius: '18px 18px 18px 4px', padding: '9px 14px', display: 'flex', gap: 6, alignItems: 'center' }}>
-              <Spinner size={14} />
-              <span style={{ fontSize: 12, color: T.txt2 }}>Pensando…</span>
-            </div>
-          </div>
-        )}
-        <div ref={endRef} />
-      </div>
+          </ScrollShadow>
+        </CardBody>
+      </Card>
 
       {/* Input bar */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <input
-          style={{ ...st.input, flex: 1, borderRadius: 20 }}
+      <div className="flex gap-2">
+        <Input
           placeholder={`Escribe a ${aName}…`}
           value={input}
-          onChange={e => setInput(e.target.value)}
+          onValueChange={setInput}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
           disabled={loading}
+          classNames={{ inputWrapper: dark ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-200' }}
+          className="flex-1"
         />
-        <button
-          style={st.primaryBtn(loading ? T.sur2 : T.acc, loading ? T.txt2 : '#fff')}
-          onClick={() => send()}
-          disabled={loading}
-        >
+        <Button color="primary" isDisabled={loading || !input.trim()} onPress={() => send()} className="font-semibold">
           Enviar
-        </button>
+        </Button>
         {messages.length > 0 && (
-          <button style={st.ghostBtn()} onClick={() => onMessages([])}>Limpiar</button>
+          <Button variant="flat" onPress={() => onMessages([])} className={dark ? 'bg-zinc-800' : 'bg-zinc-100'}>
+            Limpiar
+          </Button>
         )}
       </div>
 
-      {/* Ollama status hint */}
-      <div style={{ marginTop: 8, fontSize: 10, color: T.txt3, fontFamily: T.mono, textAlign: 'center' }}>
-        Modelo: {config?.ollama_model ?? 'llama3'} · {config?.ollama_url ?? 'http://localhost:11434'}
-      </div>
+      <p className={`text-xs text-center font-mono ${dark ? 'text-zinc-600' : 'text-zinc-400'}`}>
+        {config?.ollama_model ?? 'llama3'} · {config?.ollama_url ?? 'http://localhost:11434'}
+      </p>
     </div>
   );
 }
